@@ -1,0 +1,11 @@
+{
+  "testEnvironment": "node",
+  "testMatch": ["**/__tests__/**/*.js", "**/*.test.js"],
+  "collectCoverageFrom": [
+    "src/**/*.js",
+    "!src/seed/**",
+    "!src/docs/**"
+  ],
+  "coverageReporters": ["text", "lcov", "clover"],
+  "verbose": true
+}

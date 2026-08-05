@@ -1,0 +1,20 @@
+# DrugIQ – Services Directory
+
+Business logic and data-access services live here.
+
+## Planned Services
+
+| File                    | Description                                      |
+|-------------------------|--------------------------------------------------|
+| `DrugService.js`        | CRUD, search, and aggregation for drugs          |
+| `ReviewService.js`      | Review queries, filtering, and analytics         |
+| `SideEffectService.js`  | Side-effect aggregation logic                    |
+| `ConditionService.js`   | Condition-to-drug mapping                        |
+| `AnalyticsService.js`   | Aggregation pipelines for analytics endpoints    |
+| `NLPService.js`         | Sentiment scoring and NLP pipeline               |
+
+## Conventions
+
+- Services are pure functions / classes — no `req`/`res` objects.
+- Services receive plain data objects and return plain data.
+- All database calls use `lean()` for performance (unless Mongoose docs needed).

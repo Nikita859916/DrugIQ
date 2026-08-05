@@ -1,0 +1,18 @@
+# DrugIQ – Models Directory
+
+Mongoose model definitions live here.
+
+## Planned Models
+
+| File                  | Collection      | Description                           |
+|-----------------------|-----------------|---------------------------------------|
+| `Drug.js`             | `drugs`         | Drug name, conditions, side effects   |
+| `Review.js`           | `reviews`       | Patient reviews, rating, sentiment    |
+| `SideEffect.js`       | `sideeffects`   | Aggregated side-effect frequencies    |
+| `Condition.js`        | `conditions`    | Medical conditions + related drugs    |
+
+## Conventions
+
+- All models must use `timestamps: true` in schema options.
+- All schemas must define a `toJSON` transform to remove `__v` and rename `_id` to `id`.
+- Index all fields used in filtering or sorting.
