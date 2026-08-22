@@ -1,0 +1,15 @@
+{
+    "keep": {
+        "days": true,
+        "amount": 14
+    },
+    "auditLog": "C:\\Users\\Dell\\OneDrive\\Desktop\\DrugIQ-Backend\\YYYY-MM-DD\\.82d39a5d66cef18c7ee778b3ef12b755bdacfa2c-audit.json",
+    "files": [
+        {
+            "date": 1787299002279,
+            "name": "C:\\Users\\Dell\\OneDrive\\Desktop\\DrugIQ-Backend\\YYYY-MM-DD\\combined-2026-08-21.log",
+            "hash": "c064f964fa163163af614b6352d807acc81af0add957e7e726d341ddacdfcf9b"
+        }
+    ],
+    "hashType": "sha256"
+}
