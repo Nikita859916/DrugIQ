@@ -316,14 +316,36 @@ ReviewSchema.virtual('ratingBucket').get(function () {
 // ── Pre-Save Middleware ────────────────────────────────────────────────────────
 
 /**
- * Derive sentiment label from score if score is available but label is default.
+ * Automatically process review text using SentimentService if unanalysed:
+ * Cleans review text, calculates sentiment score & label, and extracts side effects.
  */
-ReviewSchema.pre('save', function deriveSentimentLabel(next) {
-  const { sentiment } = this;
-  if (sentiment && sentiment.score != null && sentiment.label === 'unanalysed') {
-    if (sentiment.score > 0.05) sentiment.label = 'positive';
-    else if (sentiment.score < -0.05) sentiment.label = 'negative';
-    else sentiment.label = 'neutral';
+ReviewSchema.pre('save', function processReviewNLP(next) {
+  if (this.review && (!this.isAnalysed || this.isModified('review'))) {
+    try {
+      // eslint-disable-next-line global-require
+      const SentimentService = require('../services/sentimentService');
+      // eslint-disable-next-line global-require
+      const { cleanReviewText } = require('../utils/textCleaner');
+
+      this.cleanedReview = cleanReviewText(this.review);
+      const nlp = SentimentService.processReviewText(this.review);
+      if (!nlp || typeof nlp.sentimentScore !== 'number') {
+        throw new Error('NLP processing failed to produce valid sentiment analysis');
+      }
+
+      this.sentiment = {
+        score: nlp.sentimentScore,
+        label: nlp.sentimentLabel,
+        confidence: Math.min(1, Math.abs(nlp.sentimentScore) + 0.3),
+        positive: nlp.sentimentScore > 0.05 ? nlp.sentimentScore : 0,
+        negative: nlp.sentimentScore < -0.05 ? Math.abs(nlp.sentimentScore) : 0,
+        neutral: Math.max(0, 1 - Math.abs(nlp.sentimentScore)),
+      };
+      this.predictedSideEffects = nlp.predictedSideEffects || [];
+      this.isAnalysed = true;
+    } catch (err) {
+      return next(err);
+    }
   }
   next();
 });

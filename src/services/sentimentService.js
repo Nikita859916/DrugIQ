@@ -4,11 +4,11 @@
 // and updates Review documents in bulk.
 // ────────────────────────────────────────────────────────────────────────────
 
-'use strict';
-
 const Sentiment = require('sentiment');
 const { Review } = require('../models');
 const logger = require('../utils/logger');
+const { cleanReviewText } = require('../utils/textCleaner');
+const SideEffectService = require('./sideEffectService');
 
 const sentimentAnalyzer = new Sentiment();
 
@@ -16,7 +16,7 @@ class SentimentService {
   /**
    * Analyze sentiment of a text string
    * @param {string} text - Review text
-   * @returns {{ score: number, label: 'positive'|'neutral'|'negative', confidence: number, positive: number, negative: number, neutral: number }}
+   * @returns {object} Sentiment result object containing score, label, confidence, etc.
    */
   static analyzeText(text) {
     if (!text || typeof text !== 'string') {
@@ -36,7 +36,7 @@ class SentimentService {
     // Normalize raw VADER-style score to [-1.0, +1.0] range
     const normalizedScore = Math.max(
       -1,
-      Math.min(1, Math.round((result.score / Math.sqrt(wordCount)) * 100) / 100)
+      Math.min(1, Math.round((result.score / Math.sqrt(wordCount)) * 100) / 100),
     );
 
     // Assign label based on thresholds
@@ -66,6 +66,25 @@ class SentimentService {
   static analyzeReview(reviewDoc) {
     const textToAnalyze = reviewDoc.cleanedReview || reviewDoc.review;
     return this.analyzeText(textToAnalyze);
+  }
+
+  /**
+   * Reusable function that combines text cleaning, sentiment analysis,
+   * and side-effect extraction.
+   *
+   * @param {string} rawText - Verbatim patient review text
+   * @returns {object} Combined review extraction results.
+   */
+  static processReviewText(rawText) {
+    const cleaned = cleanReviewText(rawText);
+    const sentimentResult = this.analyzeText(cleaned);
+    const predictedSideEffects = SideEffectService.extractFromText(cleaned);
+
+    return {
+      sentimentScore: sentimentResult.score,
+      sentimentLabel: sentimentResult.label,
+      predictedSideEffects,
+    };
   }
 
   /**

@@ -10,8 +10,6 @@
 //   sentiment     : 15%  — sentiment distribution vector cosine
 // ────────────────────────────────────────────────────────────────────────────
 
-'use strict';
-
 /**
  * Configurable similarity weights.
  * Must sum to 1.0. Override by passing a custom weights object to
@@ -19,9 +17,9 @@
  */
 const SIMILARITY_WEIGHTS = {
   sideEffects: 0.50,
-  conditions : 0.25,
-  rating     : 0.10,
-  sentiment  : 0.15,
+  conditions: 0.25,
+  rating: 0.10,
+  sentiment: 0.15,
 };
 
 /**
@@ -102,12 +100,8 @@ const calculateWeightedDrugSimilarity = (drugA, drugB, weights = SIMILARITY_WEIG
   if (!drugA || !drugB) return 0;
 
   // Extract side effect name arrays from embedded sub-docs or plain strings
-  const sideEffectsA = (drugA.commonSideEffects || []).map((se) =>
-    typeof se === 'string' ? se : se.effect
-  );
-  const sideEffectsB = (drugB.commonSideEffects || []).map((se) =>
-    typeof se === 'string' ? se : se.effect
-  );
+  const sideEffectsA = (drugA.commonSideEffects || []).map((se) => (typeof se === 'string' ? se : se.effect));
+  const sideEffectsB = (drugB.commonSideEffects || []).map((se) => (typeof se === 'string' ? se : se.effect));
 
   // 1. Side Effect Jaccard Similarity
   const sideEffectSim = calculateJaccardSimilarity(sideEffectsA, sideEffectsB);
@@ -115,28 +109,27 @@ const calculateWeightedDrugSimilarity = (drugA, drugB, weights = SIMILARITY_WEIG
   // 2. Condition Jaccard Similarity
   const conditionSim = calculateJaccardSimilarity(
     drugA.conditions || [],
-    drugB.conditions || []
+    drugB.conditions || [],
   );
 
   // 3. Average Rating Closeness (max possible diff between rating 1–10 is 9)
   const ratingSim = calculateNumericalCloseness(
     drugA.averageRating,
     drugB.averageRating,
-    9
+    9,
   );
 
   // 4. Sentiment Distribution Cosine Similarity
   const sentimentSim = calculateCosineSimilarity(
     drugA.sentimentDistribution,
-    drugB.sentimentDistribution
+    drugB.sentimentDistribution,
   );
 
   // Weighted combination using configurable weights
-  const totalScore =
-    sideEffectSim * weights.sideEffects +
-    conditionSim  * weights.conditions  +
-    ratingSim     * weights.rating      +
-    sentimentSim  * weights.sentiment;
+  const totalScore = sideEffectSim * weights.sideEffects
+    + conditionSim * weights.conditions
+    + ratingSim * weights.rating
+    + sentimentSim * weights.sentiment;
 
   return Math.round(totalScore * 10000) / 10000;
 };

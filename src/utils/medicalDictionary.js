@@ -1,9 +1,7 @@
 // ─── utils/medicalDictionary.js ──────────────────────────────────────────────
 // Reusable Medical Side Effects Dictionary with 50+ common side effects & synonyms.
-// Maps patient-reported casual phrases (e.g. "felt sick", "head spinning") to canonical medical terms.
+// Maps casual phrases (e.g. "felt sick", "head spinning") to canonical medical terms.
 // ────────────────────────────────────────────────────────────────────────────
-
-'use strict';
 
 /**
  * Structured Medical Side Effects Dictionary
@@ -33,7 +31,7 @@ const MEDICAL_SIDE_EFFECTS = [
   {
     canonical: 'fatigue',
     severity: 'mild',
-    synonyms: ['fatigue', 'fatigued', 'exhausted', 'exhaustion', 'extreme tiredness', 'feeling drained', 'drained', 'lack of energy', 'no energy', 'lethargy', 'sluggish'],
+    synonyms: ['fatigue', 'tired', 'fatigued', 'exhausted', 'exhaustion', 'extreme tiredness', 'feeling drained', 'drained', 'lack of energy', 'no energy', 'lethargy', 'sluggish'],
   },
   {
     canonical: 'anxiety',
@@ -267,11 +265,20 @@ const MEDICAL_SIDE_EFFECTS = [
   },
 ];
 
-// Pre-compiled map for O(1) synonym lookup
+// Pre-compiled map for O(1) synonym lookup and pre-compiled regexes
 const SYNONYM_MAP = new Map();
+const PRECOMPILED_REGEXES = [];
+
 MEDICAL_SIDE_EFFECTS.forEach((entry) => {
   entry.synonyms.forEach((synonym) => {
-    SYNONYM_MAP.set(synonym.toLowerCase(), entry);
+    const lowerSynonym = synonym.toLowerCase();
+    SYNONYM_MAP.set(lowerSynonym, entry);
+    const escaped = lowerSynonym.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+    PRECOMPILED_REGEXES.push({
+      synonym,
+      entry,
+      regex: new RegExp(`\\b${escaped}\\b`, 'i'),
+    });
   });
 });
 
@@ -286,16 +293,14 @@ const extractSideEffectsFromText = (text) => {
   const lowerText = text.toLowerCase();
   const detectedMap = new Map(); // canonical -> { effect, severity, match }
 
-  // Check each synonym in dictionary against text
-  for (const [synonym, entry] of SYNONYM_MAP.entries()) {
-    // Regex for word boundary matching
-    const regex = new RegExp(`\\b${synonym.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, 'i');
-    if (regex.test(lowerText)) {
-      if (!detectedMap.has(entry.canonical)) {
-        detectedMap.set(entry.canonical, {
-          effect: entry.canonical,
-          severity: entry.severity,
-          match: synonym,
+  // Check each pre-compiled synonym regex against text
+  for (const item of PRECOMPILED_REGEXES) {
+    if (item.regex.test(lowerText)) {
+      if (!detectedMap.has(item.entry.canonical)) {
+        detectedMap.set(item.entry.canonical, {
+          effect: item.entry.canonical,
+          severity: item.entry.severity,
+          match: item.synonym,
         });
       }
     }
@@ -311,7 +316,7 @@ const extractSideEffectsFromText = (text) => {
  */
 const getSideEffectSeverity = (canonicalEffect) => {
   const entry = MEDICAL_SIDE_EFFECTS.find(
-    (e) => e.canonical.toLowerCase() === canonicalEffect.toLowerCase()
+    (e) => e.canonical.toLowerCase() === canonicalEffect.toLowerCase(),
   );
   return entry ? entry.severity : 'mild';
 };

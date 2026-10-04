@@ -4,8 +4,6 @@
 // condition overlap, rating closeness, sentiment vector) and populates Top 5 Similar Drugs.
 // ────────────────────────────────────────────────────────────────────────────
 
-'use strict';
-
 const { Drug } = require('../models');
 const { calculateWeightedDrugSimilarity } = require('../utils/similarityCalculator');
 const logger = require('../utils/logger');
@@ -33,7 +31,7 @@ class SimilarityService {
     }
 
     const sideEffectNames = (targetDrug.commonSideEffects || []).map(
-      (se) => (typeof se === 'string' ? se : se.effect)
+      (se) => (typeof se === 'string' ? se : se.effect),
     );
     if (sideEffectNames.length > 0) {
       candidateQuery.$or.push({ 'commonSideEffects.effect': { $in: sideEffectNames } });
@@ -77,7 +75,7 @@ class SimilarityService {
 
     await Drug.updateOne(
       { _id: drugId },
-      { $set: { similarDrugs: topSimilar } }
+      { $set: { similarDrugs: topSimilar } },
     ).exec();
 
     return topSimilar;

@@ -4,8 +4,6 @@
 // based on ratings, negative review concentration, and severe side effect frequency.
 // ────────────────────────────────────────────────────────────────────────────
 
-'use strict';
-
 const { Drug, Review } = require('../models');
 const logger = require('../utils/logger');
 
@@ -26,7 +24,9 @@ class RiskAnalysisService {
    * @param {number} stats.reviewCount - Total review count
    * @returns {number} Score rounded to 2 decimal places (0 to 100)
    */
-  static calculateRiskScore({ averageRating = 7.5, negativePercent = 0, severeCount = 0, reviewCount = 1 }) {
+  static calculateRiskScore({
+    averageRating = 7.5, negativePercent = 0, severeCount = 0, reviewCount = 1,
+  }) {
     const safeRating = averageRating == null ? 7.5 : averageRating;
     const safeReviewCount = Math.max(1, reviewCount);
 
@@ -94,11 +94,11 @@ class RiskAnalysisService {
 
     // 2. Count severe side effects
     const severeSideEffects = (drug.commonSideEffects || []).filter(
-      (se) => se.severity === 'severe'
+      (se) => se.severity === 'severe',
     );
     const severeCount = severeSideEffects.reduce(
       (sum, se) => sum + (se.frequency || 0),
-      0
+      0,
     );
 
     // 3. Compute Risk Score & Risk Cluster
@@ -111,10 +111,25 @@ class RiskAnalysisService {
 
     const riskCluster = this.getRiskLevel(riskScore);
 
+    // Compute average sentiment score across reviews
+    const scoreAgg = await Review.aggregate([
+      { $match: { drug: drugId, 'sentiment.score': { $ne: null } } },
+      {
+        $group: {
+          _id: null,
+          avgScore: { $avg: '$sentiment.score' },
+        },
+      },
+    ]).exec();
+    const sentimentScore = scoreAgg.length > 0 && scoreAgg[0].avgScore != null
+      ? Math.round(scoreAgg[0].avgScore * 100) / 100
+      : 0;
+
     // 4. Update Drug Document
     drug.positiveReviews = positiveCount;
     drug.neutralReviews = neutralCount;
     drug.negativeReviews = negativeCount;
+    drug.sentimentScore = sentimentScore;
     drug.sentimentDistribution = {
       positive: positivePercent,
       neutral: neutralPercent,

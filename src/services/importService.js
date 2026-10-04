@@ -5,29 +5,17 @@
 // and resumable import execution.
 // ────────────────────────────────────────────────────────────────────────────
 
-'use strict';
-
+/* eslint-disable no-continue */
 const path = require('path');
-const crypto = require('crypto');
 const { Drug, Review } = require('../models');
 const { parseCSVInBatches, formatDuration } = require('../utils/csvParser');
 const { cleanReviewText, cleanConditionText } = require('../utils/textCleaner');
 const logger = require('../utils/logger');
-const AppError = require('../utils/AppError');
-
-/**
- * Generate a deterministic unique hash for a review to detect duplicates across imports
- * @param {string} drugName
- * @param {string} reviewText
- * @param {string} dateStr
- * @returns {string} SHA-256 hash snippet
- */
-const generateReviewHash = (drugName, reviewText, dateStr) => {
-  return crypto
-    .createHash('sha256')
-    .update(`${drugName.toLowerCase().trim()}_${reviewText.trim()}_${dateStr}`)
-    .digest('hex');
-};
+const SentimentService = require('./sentimentService');
+const SideEffectService = require('./sideEffectService');
+const RiskAnalysisService = require('./riskAnalysisService');
+const SimilarityService = require('./similarityService');
+const SummaryService = require('./summaryService');
 
 /**
  * Parse Kaggle dataset date format (e.g., "September 27, 2015" or "28-Feb-12")
@@ -61,7 +49,7 @@ class ImportService {
   } = {}) {
     const defaultPath = path.resolve(
       process.cwd(),
-      'src/seed/data/drugsComTrain_raw.csv'
+      'src/seed/data/drugsComTrain_raw.csv',
     );
     const targetFilePath = filePath || defaultPath;
 
@@ -93,7 +81,7 @@ class ImportService {
       const drug = await Drug.findOneAndUpdate(
         { name: normalisedName },
         { $setOnInsert: { name: normalisedName } },
-        { upsert: true, new: true, runValidators: true }
+        { upsert: true, new: true, runValidators: true },
       ).exec();
 
       drugCache.set(normalisedName, drug._id);
@@ -110,13 +98,12 @@ class ImportService {
       // 1. Process rows in current batch
       for (const row of batchRows) {
         try {
-
-          const drugName = row.drugName || row.drug_name || row['drugName'];
-          const rawReview = row.review || row['review'];
-          const rawRating = row.rating || row['rating'];
-          const rawDate = row.date || row['date'];
-          const rawUseful = row.usefulCount || row.useful_count || row['usefulCount'];
-          const rawCondition = row.condition || row['condition'];
+          const drugName = row.drugName || row.drug_name || row.drugName;
+          const rawReview = row.review || row.review;
+          const rawRating = row.rating || row.rating;
+          const rawDate = row.date || row.date;
+          const rawUseful = row.usefulCount || row.useful_count || row.usefulCount;
+          const rawCondition = row.condition || row.condition;
 
           // Basic validation of required CSV fields
           if (!drugName || !rawReview || !rawRating) {
@@ -133,13 +120,6 @@ class ImportService {
           // Get or create drug ID
           const drugId = await getOrCreateDrugId(drugName.trim());
 
-          // Build unique hash for duplicate detection
-          const reviewHash = generateReviewHash(
-            drugName,
-            rawReview,
-            rawDate || ''
-          );
-
           // Duplicate detection (Resumable mode)
           if (resume) {
             const isDuplicate = await Review.exists({
@@ -155,6 +135,9 @@ class ImportService {
             }
           }
 
+          // Process review text through NLP engine (sentiment + side effects)
+          const nlp = SentimentService.processReviewText(rawReview);
+
           // Build Review document for batch insertion
           reviewDocsToInsert.push({
             drug: drugId,
@@ -166,7 +149,16 @@ class ImportService {
             date: reviewDate,
             usefulCount: usefulNum,
             source,
-            isAnalysed: false,
+            sentiment: {
+              score: nlp.sentimentScore,
+              label: nlp.sentimentLabel,
+              confidence: Math.min(1, Math.abs(nlp.sentimentScore) + 0.3),
+              positive: nlp.sentimentScore > 0.05 ? nlp.sentimentScore : 0,
+              negative: nlp.sentimentScore < -0.05 ? Math.abs(nlp.sentimentScore) : 0,
+              neutral: Math.max(0, 1 - Math.abs(nlp.sentimentScore)),
+            },
+            predictedSideEffects: nlp.predictedSideEffects,
+            isAnalysed: true,
           });
 
           // Accumulate real-time stat updates per drug
@@ -186,7 +178,6 @@ class ImportService {
           if (cleanedCondition) {
             drugStats.conditions.add(cleanedCondition);
           }
-
         } catch (rowErr) {
           failed += 1;
           logger.warn(`Failed to process CSV row: ${rowErr.message}`);
@@ -217,7 +208,6 @@ class ImportService {
 
         for (const [, stats] of drugStatUpdates) {
           const addedCount = stats.ratings.length;
-          const addedRatingSum = stats.ratings.reduce((a, b) => a + b, 0);
           const conditionArray = Array.from(stats.conditions);
 
           drugBulkOps.push({
@@ -326,6 +316,104 @@ class ImportService {
       await Drug.bulkWrite(bulkOps);
       logger.info(`✅ Average ratings updated for ${bulkOps.length} drugs.`);
     }
+  }
+
+  /**
+   * Fully aggregate statistics and NLP intelligence for a single drug.
+   *
+   * @param {import('mongoose').Types.ObjectId|string} drugId
+   * @returns {Promise<object|null>} Aggregated drug document
+   */
+  static async aggregateDrug(drugId) {
+    const drug = await Drug.findById(drugId);
+    if (!drug) return null;
+
+    // 1. Recompute basic stats (rating, count, useful, conditions) from reviews
+    const statsAgg = await Review.aggregate([
+      { $match: { drug: drug._id } },
+      {
+        $group: {
+          _id: null,
+          reviewCount: { $sum: 1 },
+          avgRating: { $avg: '$rating' },
+          totalUseful: { $sum: '$usefulCount' },
+          conditions: { $addToSet: '$condition' },
+        },
+      },
+    ]).exec();
+
+    if (statsAgg.length > 0) {
+      const stats = statsAgg[0];
+      const validConditions = (stats.conditions || []).filter(
+        (c) => c && typeof c === 'string',
+      );
+
+      await Drug.updateOne(
+        { _id: drug._id },
+        {
+          $set: {
+            reviewCount: stats.reviewCount,
+            averageRating: stats.avgRating != null
+              ? Math.round(stats.avgRating * 100) / 100
+              : null,
+            totalUsefulCount: stats.totalUseful || 0,
+            conditions: validConditions,
+          },
+        },
+      );
+    }
+
+    // 2. Aggregate common side effects
+    await SideEffectService.aggregateDrugSideEffects(drug._id);
+
+    // 3. Compute Risk profile and sentiment distribution
+    await RiskAnalysisService.updateDrugRisk(drug._id);
+
+    // 4. Compute Top 5 similar drugs
+    await SimilarityService.updateDrugSimilarities(drug._id);
+
+    // 5. Generate plain-language summary
+    await SummaryService.generateForDrug(drug._id, { persist: true });
+
+    // 6. Mark drug as aggregated
+    await Drug.updateOne(
+      { _id: drug._id },
+      {
+        $set: {
+          isAggregated: true,
+          lastAggregatedAt: new Date(),
+        },
+      },
+    );
+
+    return Drug.findById(drug._id).lean().exec();
+  }
+
+  /**
+   * Aggregate all pending drugs that need re-aggregation.
+   *
+   * @param {number} [limit=100]
+   * @returns {Promise<{ processed: number, failures: number }>}
+   */
+  static async aggregatePendingDrugs(limit = 100) {
+    const pendingDrugs = await Drug.findPendingAggregation(limit);
+    logger.info(`🔄 Aggregating ${pendingDrugs.length} pending drugs…`);
+
+    let processed = 0;
+    let failures = 0;
+
+    for (const drug of pendingDrugs) {
+      try {
+        await this.aggregateDrug(drug._id);
+        processed += 1;
+      } catch (err) {
+        logger.warn(`Failed to aggregate drug "${drug.name}": ${err.message}`);
+        failures += 1;
+      }
+    }
+
+    logger.info(`✅ Aggregation completed. Processed: ${processed}, Failures: ${failures}`);
+    return { processed, failures };
   }
 }
 

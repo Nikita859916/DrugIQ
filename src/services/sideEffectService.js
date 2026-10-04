@@ -4,11 +4,11 @@
 // and aggregates drug-level side effect frequency distributions.
 // ────────────────────────────────────────────────────────────────────────────
 
-'use strict';
-
 const { Review, Drug } = require('../models');
-const { extractSideEffectsFromText, getSideEffectSeverity } = require('../utils/medicalDictionary');
-const logger = require('../utils/logger');
+const {
+  extractSideEffectsFromText,
+  getSideEffectSeverity,
+} = require('../utils/medicalDictionary');
 
 class SideEffectService {
   /**
@@ -65,7 +65,7 @@ class SideEffectService {
   /**
    * Aggregate side effect statistics for a specific Drug
    * @param {import('mongoose').Types.ObjectId} drugId
-   * @returns {Promise<Array<{ effect: string, frequency: number, frequencyPercent: number, severity: string }>>}
+   * @returns {Promise<Array>} List of common side effects with frequencies and severities.
    */
   static async aggregateDrugSideEffects(drugId) {
     // Pipeline to aggregate frequency of predicted side effects for this drug
@@ -88,10 +88,10 @@ class SideEffectService {
 
     const commonSideEffects = aggregated.map((item) => {
       const effectName = item._id;
-      const frequency = item.frequency;
+      const { frequency } = item;
       const frequencyPercent = Math.min(
         100,
-        Math.round((frequency / totalReviews) * 100 * 10) / 10
+        Math.round((frequency / totalReviews) * 100 * 10) / 10,
       );
       const severity = getSideEffectSeverity(effectName);
 
@@ -106,7 +106,7 @@ class SideEffectService {
     // Update Drug document with aggregated commonSideEffects
     await Drug.updateOne(
       { _id: drugId },
-      { $set: { commonSideEffects } }
+      { $set: { commonSideEffects } },
     ).exec();
 
     return commonSideEffects;
